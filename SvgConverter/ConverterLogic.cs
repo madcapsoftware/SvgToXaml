@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using System.Xml.XPath;
 using SharpVectors.Converters;
 using SharpVectors.Renderers.Wpf;
+using SharpVectors.Runtime;
 
 namespace SvgConverter
 {
@@ -33,11 +34,11 @@ namespace SvgConverter
         internal static XNamespace NsDef = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         internal static XmlNamespaceManager NsManager = new XmlNamespaceManager(new NameTable());
 
-        public static string SvgFileToXaml(string filepath, ResultMode resultMode, ResKeyInfo resKeyInfo, WpfDrawingSettings wpfDrawingSettings = null)
+        public static string SvgFileToXaml(string filepath, ResultMode resultMode, ResKeyInfo resKeyInfo = null, WpfDrawingSettings wpfDrawingSettings = null, XamlWriteOptions xamlWriteOptions = null, ResourceDictionary resources = null)
         {
             string name;
-            var obj = ConvertSvgToObject(filepath, resultMode, wpfDrawingSettings, out name, resKeyInfo);
-            return SvgObjectToXaml(obj, wpfDrawingSettings != null && wpfDrawingSettings.IncludeRuntime, name);
+            var obj = ConvertSvgToObject(filepath, resultMode, wpfDrawingSettings, out name, resKeyInfo ?? new ResKeyInfo(), resources);
+            return SvgObjectToXaml(obj, wpfDrawingSettings != null && wpfDrawingSettings.IncludeRuntime, xamlWriteOptions ?? new XamlWriteOptions() { Name = name });
         }
 
         public static ConvertedSvgData ConvertSvg(string filepath, ResultMode resultMode)
@@ -53,10 +54,10 @@ namespace SvgConverter
             };
         }
 
-        public static object ConvertSvgToObject(string filepath, ResultMode resultMode, WpfDrawingSettings wpfDrawingSettings, out string name, ResKeyInfo resKeyInfo)
+        public static object ConvertSvgToObject(string filepath, ResultMode resultMode, WpfDrawingSettings wpfDrawingSettings, out string name, ResKeyInfo resKeyInfo, ResourceDictionary resources)
         {
-            var dg = ConvertFileToDrawingGroup(filepath, wpfDrawingSettings);
-            var elementName = Path.GetFileNameWithoutExtension(filepath);
+            DrawingGroup dg = ConvertFileToDrawingGroup(filepath, wpfDrawingSettings, resources);
+            string elementName = Path.GetFileNameWithoutExtension(filepath);
             switch (resultMode)
             {
                 case ResultMode.DrawingGroup:
@@ -70,16 +71,24 @@ namespace SvgConverter
             }
         }
 
-        public static string SvgObjectToXaml(object obj, bool includeRuntime, string name)
+        public static string SvgObjectToXaml(object obj, bool includeRuntime, XamlWriteOptions options)
         {
-            var xamlUntidy = WpfObjToXaml(obj, includeRuntime);
+            string xamlUntidy = WpfObjToXaml(obj, includeRuntime);
 
-            var doc = XDocument.Parse(xamlUntidy);
-            BeautifyDrawingElement(doc.Root, name);
-            var xamlWithNamespaces = doc.ToString();
+            XDocument doc = XDocument.Parse(xamlUntidy);
+            BeautifyDrawingElement(doc.Root, options.Name);
+            string xaml = doc.ToString();
 
-            var xamlClean = RemoveNamespaceDeclarations(xamlWithNamespaces);
-            return xamlClean;
+            if (options.IncludeXmlDeclaration)
+            {
+                XDeclaration declaration = new XDeclaration("1.0", "UTF-8", null);
+                xaml = declaration.ToString() + Environment.NewLine + xaml;
+            }
+
+            if (!options.IncludeNamespaces)
+                xaml = RemoveNamespaceDeclarations(xaml);
+
+            return xaml;
         }
 
         public static string SvgDirToXaml(string folder, ResKeyInfo resKeyInfo)
@@ -261,12 +270,68 @@ namespace SvgConverter
             return dict;
         }
 
-        private static DrawingGroup ConvertFileToDrawingGroup(string filepath, WpfDrawingSettings wpfDrawingSettings)
+        private static DrawingGroup ConvertFileToDrawingGroup(string filepath, WpfDrawingSettings wpfDrawingSettings, ResourceDictionary resources = null)
         {
             var dg = SvgFileToWpfObject(filepath, wpfDrawingSettings);
             SetSizeToGeometries(dg);
             RemoveObjectNames(dg);
+            ExtractResources(dg, resources);
             return dg;
+        }
+
+        private static ResourceDictionary ExtractResources(DrawingGroup dg, ResourceDictionary resources = null)
+        {
+            if (resources == null)
+                resources = new ResourceDictionary();
+
+            foreach (Drawing drawing in dg.Children)
+            {
+                drawing.SetValue(SvgObject.IdProperty, DependencyProperty.UnsetValue);
+                drawing.SetValue(SvgLink.KeyProperty, DependencyProperty.UnsetValue);
+
+                GeometryDrawing geometryDrawing = drawing as GeometryDrawing;
+                if (geometryDrawing != null)
+                {
+                    string className = SvgObject.GetClass(drawing);
+                    if (!string.IsNullOrEmpty(className))
+                    {
+                        string resourceName = ClassNameToResourceName(className);
+                        if (!resources.Contains(resourceName))
+                            resources.Add(resourceName, geometryDrawing.Brush);
+                    }
+                }
+
+                DrawingGroup childGroup = drawing as DrawingGroup;
+                if (childGroup != null)
+                    ExtractResources(childGroup, resources);
+            }
+
+            return resources;
+        }
+
+        private static string ClassNameToResourceName(string className)
+        {
+            List<char> resourceName = new List<char>();
+            bool upperCase = true;
+
+            foreach (char c in className)
+            {
+                if (c == '-')
+                {
+                    upperCase = true;
+                }
+                else if (upperCase)
+                {
+                    resourceName.Add(Char.ToUpper(c));
+                    upperCase = false;
+                }
+                else
+                {
+                    resourceName.Add(c);
+                }
+            }
+
+            return new string(resourceName.ToArray());
         }
 
         internal static void SetSizeToGeometries(DrawingGroup dg)
@@ -404,6 +469,7 @@ namespace SvgConverter
             RemoveCascadedDrawingGroup(drawingElement);
             CollapsePathGeometries(drawingElement);
             SetDrawingElementxKey(drawingElement, name);
+            ReplacePaletteBrushes(drawingElement);
         }
 
         private static void InlineClipping(XElement drawingElement)
@@ -488,6 +554,143 @@ namespace SvgConverter
             drawingElement.ReplaceAttributes(attributes);
         }
 
+        private static void ReplaceClassNamesWithDynamicResources(XElement root)
+        {
+            var geometryDrawings = root.Descendants(NsDef + "GeometryDrawing").ToArray();
+            foreach (var geometryDrawing in geometryDrawings)
+            {
+                XAttribute classAttr = geometryDrawing.Attributes().Where(x => x.Name.LocalName == "SvgObject.Class").FirstOrDefault();
+                if (classAttr != null)
+                {
+                    string resourceName = ClassNameToResourceName(classAttr.Value);
+                    geometryDrawing.SetAttributeValue("Brush", $"{{DynamicResource {resourceName}}}");
+                    classAttr.Remove();
+                    geometryDrawing.Elements().Where(x => x.Name.LocalName == "GeometryDrawing.Brush")?.Remove();
+                }
+            }
+        }
+
+        private static void ReplacePaletteBrushes(XElement root)
+        {
+            var geometryDrawings = root.Descendants(NsDef + "GeometryDrawing").ToArray();
+            foreach (var geometryDrawing in geometryDrawings)
+            {
+                SolidColorBrush brush = GetGeometryDrawingBrush(geometryDrawing);
+                string resourceName = GetPaletteResourceName(brush);
+
+                if (resourceName != null)
+                {
+                    geometryDrawing.SetAttributeValue("Brush", $"{{DynamicResource {resourceName}}}");
+                    geometryDrawing.Elements().Where(x => x.Name.LocalName == "GeometryDrawing.Brush")?.Remove();
+                }
+            }
+        }
+
+        private static SolidColorBrush GetGeometryDrawingBrush(XElement geometryDrawing)
+        {
+            XElement brushEl = null;
+            string color = null;
+
+            XAttribute brushAttr = GetAttribute(geometryDrawing, "Brush");
+            if (brushAttr != null)
+            {
+                color = brushAttr.Value;
+                brushEl = geometryDrawing;
+            }
+            else
+            {
+                XElement brushContainerEl = GetChildElement(geometryDrawing, "GeometryDrawing.Brush");
+                if (brushContainerEl != null)
+                {
+                    brushEl = GetChildElement(brushContainerEl, "SolidColorBrush");
+                    if (brushEl != null)
+                        color = GetAttribute(brushEl, "Color")?.Value;
+                }
+            }
+
+            if (brushEl != null && color != null)
+            {
+                SolidColorBrush brush = (SolidColorBrush)(new BrushConverter().ConvertFrom(color));
+
+                XAttribute opacityAttr = GetAttribute(brushEl, "Opacity");
+                if (opacityAttr != null)
+                {
+                    double opacity = Convert.ToDouble(opacityAttr.Value);
+                    brush.Opacity = opacity;
+                }
+
+                return brush;
+            }
+
+            return null;
+        }
+
+        private static XAttribute GetAttribute(XElement element, string name)
+        {
+            return element.Attributes().FirstOrDefault(x => x.Name.LocalName == name);
+        }
+
+        private static XElement GetChildElement(XElement element, string name)
+        {
+            return element.Elements().FirstOrDefault(x => x.Name.LocalName == name);
+        }
+
+        // TODO: Should be configurable.
+        private static string GetPaletteResourceName(SolidColorBrush brush)
+        {
+            if (brush != null)
+            {
+                switch (brush.Color.ToString().ToUpper())
+                { 
+                    case "#FFF6F6F6":
+                        return brush.Opacity == 0 ? "IconTransparent" : "IconOutline";
+                    case "#FF424242":
+                        return "IconBackground";
+                    case "#FFF0EFF1":
+                        return "IconForeground";
+                    case "#FF388A34":
+                        return "IconActionGreen";
+                    case "#FFA1260D":
+                        return "IconActionRed";
+                    case "#FF00539C":
+                        return "IconActionBlue";
+                    case "#FFC27D1A":
+                        return "IconActionOrange";
+                    case "#FFDCB67A":
+                        return "IconFolder";
+                    case "#FF0095D7":
+                        return "IconLanguageLightBlue";
+                    case "#FF9B4F96":
+                        return "IconLanguageLightPurple";
+                    case "#FFBD1E2D":
+                        return "IconLanguageRed";
+                    case "#FF672878":
+                        return "IconLanguagePurple";
+                    case "#FFF16421":
+                        return "IconLanguageOrange";
+                    case "#FFE04C06":
+                        return "IconLanguageRedOrange";
+                    case "#FF879636":
+                        return "IconLanguageGreenYellow";
+                    case "#FF1BA1E2":
+                        return "IconNotificationBlue";
+                    case "#FF339933":
+                        return "IconNotificationGreen";
+                    case "#FFE51400":
+                        return "IconNotificationRed";
+                    case "#FFFFCC00":
+                        return "IconNotificationYellow";
+                    case "#FF000000":
+                        return "IconNotificationBlack";
+                    case "#FFFFFFFF":
+                        return "IconNotificationWhite";
+                }
+
+            }
+
+            return null;
+        }
+
         private static void ExtractGeometries(XElement drawingGroupElement, ResKeyInfo resKeyInfo)
         {
             //get Name of DrawingGroup
@@ -522,6 +725,7 @@ namespace SvgConverter
             //hier wird nur die Deklaration des NS rausgeschmissen (rein auf StringBasis), so dass man den Kram pasten kann
             xml = xml.Replace(" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\"", "");
             xml = xml.Replace(" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"", "");
+            xml = xml.Replace(" xmlns:svg=\"http://sharpvectors.codeplex.com/runtime/\"", "");
             return xml;
         }
 

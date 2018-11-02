@@ -153,7 +153,7 @@ namespace SvgConverterTest
         public void Handwheel3() //integrated conversion, integrated writing
         {
             var drawing = ConverterLogic.SvgFileToWpfObject("TestFiles\\Handwheel.svg", null);
-            var xaml = ConverterLogic.SvgObjectToXaml(drawing, true, "Test");
+            var xaml = ConverterLogic.SvgObjectToXaml(drawing, true, new XamlWriteOptions() { Name = "Test" });
             Console.WriteLine(xaml);
             Clipboard.SetText(xaml);
         }

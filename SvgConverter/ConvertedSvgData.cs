@@ -19,7 +19,21 @@ namespace SvgConverter
 
         public string Xaml
         {
-            get { return _xaml ?? (_xaml = ConverterLogic.SvgObjectToXaml(ConvertedObj, false, _objectName)); }
+            get
+            {
+                if (_xaml == null)
+                {
+                    DependencyObject convertedObj = ConvertedObj;
+                    XamlWriteOptions options = new XamlWriteOptions()
+                    {
+                        Name = null,
+                        IncludeNamespaces = true,
+                        IncludeXmlDeclaration = true,
+                    };
+                    _xaml = ConverterLogic.SvgObjectToXaml(convertedObj, false, options);
+                }
+                return _xaml;
+            }
             set { _xaml = value; }
         }
 
@@ -35,7 +49,8 @@ namespace SvgConverter
             {
                 if (_convertedObj == null)
                 {
-                    _convertedObj = ConverterLogic.ConvertSvgToObject(_filepath, ResultMode.DrawingImage, null, out _objectName, new ResKeyInfo()) as DependencyObject;
+                    ResourceDictionary resources = new ResourceDictionary();
+                    _convertedObj = ConverterLogic.ConvertSvgToObject(_filepath, ResultMode.DrawingImage, null, out _objectName, new ResKeyInfo(), resources) as DependencyObject;
                 }
                 return _convertedObj;
             }

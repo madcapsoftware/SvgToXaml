@@ -96,5 +96,35 @@ namespace SvgConverter
             doc.Save(filename);
             Console.WriteLine("Html overview written to {0}", filename);
         }
+
+        [ArgumentCommand(LongDesc = "Converts all svg-Images within a folder")]
+        public int Convert(
+            [ArgumentParam(Aliases = "i", Desc = "dir to the SVGs", LongDesc = "specify folder of the graphic files to process")]
+            string inputdir,
+            [ArgumentParam(DefaultValue = null, ExplicitNeeded = false, LongDesc = "folder for the xaml-Output, optional, default: folder of svgs")]
+            string outputdir = null,
+            [ArgumentParam(DefaultValue = null, ExplicitNeeded = false, LongDesc = "output path format for xaml-Output, optional, default: {0}.xaml")]
+            string outputpath = null
+            )
+        {
+            Console.WriteLine("Converting SVG to XAML...");
+
+            XamlWriteOptions xamlWriteOptions = new XamlWriteOptions()
+            {
+                IncludeXmlDeclaration = true,
+                IncludeNamespaces = true,
+            };
+
+            foreach (string filePath in Directory.GetFiles(inputdir, "*.svg", SearchOption.AllDirectories))
+            {
+                string filePathWithoutExtension = Path.Combine(Path.GetDirectoryName(filePath), Path.GetFileNameWithoutExtension(filePath));
+                string outPath = String.Format(outputpath ?? "{0}.xaml", filePathWithoutExtension);
+                string xaml = ConverterLogic.SvgFileToXaml(filePath, ResultMode.DrawingImage, xamlWriteOptions: xamlWriteOptions);
+                File.WriteAllText(outPath, xaml);
+                Console.WriteLine($"xaml written to: {outPath}");
+            }
+
+            return 0;
+        }
     }
 }
