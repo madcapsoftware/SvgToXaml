@@ -572,34 +572,40 @@ namespace SvgConverter
 
         private static void ReplacePaletteBrushes(XElement root)
         {
-            var geometryDrawings = root.Descendants(NsDef + "GeometryDrawing").ToArray();
-            foreach (var geometryDrawing in geometryDrawings)
+            ReplaceElementBrushes(root, "GeometryDrawing");
+            ReplaceElementBrushes(root, "Pen");
+        }
+
+        private static void ReplaceElementBrushes(XElement root, string elementName)
+        {
+            var elements = root.Descendants(NsDef + elementName).ToArray();
+            foreach (XElement element in elements)
             {
-                SolidColorBrush brush = GetGeometryDrawingBrush(geometryDrawing);
+                SolidColorBrush brush = GetBrush(element, elementName);
                 string resourceName = GetPaletteResourceName(brush);
 
                 if (resourceName != null)
                 {
-                    geometryDrawing.SetAttributeValue("Brush", $"{{DynamicResource {resourceName}}}");
-                    geometryDrawing.Elements().Where(x => x.Name.LocalName == "GeometryDrawing.Brush")?.Remove();
+                    element.SetAttributeValue("Brush", $"{{DynamicResource {resourceName}}}");
+                    element.Elements().Where(x => x.Name.LocalName == $"{elementName}.Brush")?.Remove();
                 }
             }
         }
 
-        private static SolidColorBrush GetGeometryDrawingBrush(XElement geometryDrawing)
+        private static SolidColorBrush GetBrush(XElement element, string elementName)
         {
             XElement brushEl = null;
             string color = null;
 
-            XAttribute brushAttr = GetAttribute(geometryDrawing, "Brush");
+            XAttribute brushAttr = GetAttribute(element, "Brush");
             if (brushAttr != null)
             {
                 color = brushAttr.Value;
-                brushEl = geometryDrawing;
+                brushEl = element;
             }
             else
             {
-                XElement brushContainerEl = GetChildElement(geometryDrawing, "GeometryDrawing.Brush");
+                XElement brushContainerEl = GetChildElement(element, $"{elementName}.Brush");
                 if (brushContainerEl != null)
                 {
                     brushEl = GetChildElement(brushContainerEl, "SolidColorBrush");
