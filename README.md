@@ -2,13 +2,17 @@
 
 1. Clone the two repositories so they are in folders next to each other:
 
-	`git clone https://github.com/madcapsoftware/SharpVectors.git`
-	`git clone https://github.com/madcapsoftware/SvgToXaml.git`
+	```
+	git clone https://github.com/madcapsoftware/SharpVectors.git
+	git clone https://github.com/madcapsoftware/SvgToXaml.git
+	```
 
 	Example folder structure:
-
-	`C:\source\madcapsoftware\SharpVectors`
-	`C:\source\madcapsoftware\SvgToXaml`
+	
+	```
+	C:\source\madcapsoftware\SharpVectors
+	C:\source\madcapsoftware\SvgToXaml
+	```
 
 2. Open SvgToXaml solution
 3. Right click SvgToXaml project -> Properties -> Debug tab
