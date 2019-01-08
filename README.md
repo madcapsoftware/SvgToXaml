@@ -1,3 +1,30 @@
+# MadCap steps to use SvgToXaml to convert a folder
+
+1. Clone the two repositories so they are in folders next to each other:
+
+	`git clone https://github.com/madcapsoftware/SharpVectors.git`
+	`git clone https://github.com/madcapsoftware/SvgToXaml.git`
+
+	Example folder structure:
+
+	`C:\source\madcapsoftware\SharpVectors`
+	`C:\source\madcapsoftware\SvgToXaml`
+
+2. Open SvgToXaml solution
+3. Right click SvgToXaml project -> Properties -> Debug tab
+4. Enter the following in "Command line arguments:"
+
+	`/convert /inputdir:<path_to_your_svg_icons>`
+
+	Example:
+
+	`/convert /inputdir:C:\icons\svgtoxaml`
+
+5. Click Start (play button)
+
+
+# Original README below
+
 # SvgToXaml
 Smart tool to view svg-files and convert them to xaml for use in .NET
 There are 3 major use cases:
