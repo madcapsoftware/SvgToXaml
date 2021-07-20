@@ -690,6 +690,10 @@ namespace SvgConverter
                         return "IconNotificationBlack";
                     case "#FFFFFFFF":
                         return "IconNotificationWhite";
+                    case "#FFFCF3A6":
+                        return "IconIndicatorProxy";
+                    case "#FFD4C776":
+                        return "IconIndicatorProxyOutline";
                 }
 
             }
